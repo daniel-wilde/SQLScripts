@@ -1,0 +1,48 @@
+function ListReports ()
+{
+	$ReportServerUri  = "http://localhost/ReportServer/ReportService2010.asmx"
+	$proxy = New-WebServiceProxy -Uri $ReportServerUri -UseDefaultCredential 
+	$type = $proxy.GetType().Namespace
+
+	#specify where the RDL files are
+	$rootFolder = "D:\ServerName_OUT\Data"
+	$files = @(get-childitem $rootFolder *.rdl -rec | where-object {!($_.psiscontainer)} | % {$_.FullName})
+
+	$uploadedCount = 0
+
+	foreach ($fileInfo in $files)
+	{    
+		#extract report name from the RDL file
+		$rdl =  [System.IO.Path]::GetFullPath($fileInfo)
+
+		$reportPathAndName = $fileInfo -replace 'D:\\ServerName_OUT\\Data',''
+		$reportPath = split-path $reportPathAndName
+		$reportPath = $reportPath -replace '\\','/'
+		$reportName = split-path $reportPathAndName -Leaf 
+		$reportName = $reportName -replace '.rdl',''
+
+		#get contents of the RDL
+		$byteArray = Get-Content $rdl -Encoding Byte
+
+		#The fully qualified URL for the parent folder that will contain #the item.
+		$parent = $reportPath
+		$overwrite = $true
+		$warnings = $null
+
+		#create report
+		Write-Output "($uploadedCount) Uploading RDL: $fileInfo in FOLDER: $reportPath"
+		$report = $proxy.CreateCatalogItem("Report", $reportName, $parent, $overwrite, $byteArray, $null, [ref]$warnings )
+         
+		if ($warnings)
+		{
+			foreach ($warn in $warnings)
+			{
+				Write-Warning $warn.Message
+			}
+		}
+         
+		$uploadedCount += 1
+	}
+}
+
+ListReports
