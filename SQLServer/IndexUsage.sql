@@ -15,10 +15,12 @@ FROM
 									AND I.index_id = S.index_id
 WHERE
 	OBJECTPROPERTY(S.[object_id], 'IsUserTable') = 1 
-	AND DB_NAME(S.database_id) = 'DBName'
-	--AND OBJECT_NAME(S.[object_id]) LIKE '%%'
+	AND DB_NAME(S.database_id) = 'CloudATS'
+	AND OBJECT_NAME(S.[object_id]) LIKE '%JobOrder%'
 	--AND I.Name IN ('')
 ORDER BY S.user_seeks
+
+sp_spaceused 'Job.JobApp' --38,830,221            
 
 ----------INDEX OPERATIONAL STATS---------
 SELECT OBJECT_NAME(A.[OBJECT_ID]) AS [OBJECT NAME], 
@@ -54,10 +56,10 @@ SELECT
        , user_scans
        , user_lookups 
        , user_updates AS [Writes] 
-       , CAST(ISNULL([last_user_seek], '') as varchar(30)) [last_user_seek]
-       , CAST(ISNULL([last_user_scan], '') as varchar(30)) [last_user_scan]
+       , CAST(ISNULL([last_user_seek], '') AS VARCHAR(30)) [last_user_seek]
+       , CAST(ISNULL([last_user_scan], '') AS VARCHAR(30)) [last_user_scan]
 --     , CAST (f.avg_fragmentation_in_percent as decimal (4,1)) [Frag %]
-       , DB_Name (@DBID) [DB Name]
+       , DB_NAME (@DBID) [DB Name]
 INTO #IndexStats
 FROM sys.dm_db_index_usage_stats AS s 
 LEFT JOIN sys.indexes f ON f.[object_id] = s.[object_id] AND f.index_id = s.index_id 

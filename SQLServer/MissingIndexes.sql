@@ -13,6 +13,7 @@ CROSS APPLY sys.dm_db_missing_index_columns(mid.index_handle)
 INNER JOIN sys.dm_db_missing_index_groups AS mig ON mig.index_handle = mid.index_handle
 INNER JOIN sys.dm_db_missing_index_group_stats AS migs ON mig.index_group_handle = migs.group_handle
 WHERE [statement] LIKE '%%'
+	AND mid.statement = '[Copilot].[dbo].[Jobs]'
 ORDER BY mig.index_group_handle
 	,mig.index_handle
 	,column_id

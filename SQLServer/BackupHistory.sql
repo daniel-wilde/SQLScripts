@@ -1,5 +1,5 @@
 ----------BACKUP HISTORY------------------------------------
-SELECT TOP 10
+SELECT TOP 1000
 	s.database_name
 	,m.physical_device_name
 	,m.*

@@ -1,3 +1,12 @@
+----LIST OUT DATABASES FOR GATHERING PERMISSIONS:
+IF OBJECT_ID('tempdb..#DatabaseList') IS NOT NULL
+	DROP TABLE #DatabaseList
+
+CREATE TABLE #DatabaseList(DatabaseName VARCHAR(100))
+INSERT INTO #DatabaseList(DatabaseName)
+VALUES
+	('DatabaseNameHere')
+
 IF OBJECT_ID('tempdb..#DBROLES') IS NOT NULL
 	DROP TABLE #DBROLES
 
@@ -40,6 +49,7 @@ FOR
 	FROM master.sys.databases
 	WHERE NAME NOT IN ('mssecurity','tempdb')
 		AND State = 0
+		AND name IN (SELECT DatabaseName FROM #DatabaseList)
 	ORDER BY NAME
 OPEN DBName_Cursor
 FETCH NEXT FROM DBName_Cursor INTO @DBName
@@ -70,7 +80,9 @@ DEALLOCATE DBName_Cursor
 
 --GET DISTINCT LIST OF DATABASE ROLES
 INSERT INTO #ALLROLES(RoleName, RoleType)
-SELECT DISTINCT RoleName, 'Database' FROM #DBROLES
+SELECT DISTINCT RoleName, 'Database' 
+FROM #DBROLES
+WHERE NOT RoleName LIKE 'MSRepl%'
 
 --GET ALL SERVER LEVEL PERMS
 INSERT INTO #SERVERROLES(ServerName, LoginName, LoginType, RoleName)
@@ -222,7 +234,7 @@ PIVOT
 ) as pvt
 ORDER BY ServerName, DatabaseName, UserOrLoginType, UserOrLoginName'
 
-PRINT @SQL
+--PRINT @SQL
 EXEC sp_executesql @SQL
 EXEC sp_executesql @UpdateNULLs
 
@@ -247,6 +259,7 @@ DECLARE cursor_RolePerms CURSOR FAST_FORWARD
 FOR 
 	SELECT Name 
 	FROM sys.databases 
+	WHERE name IN (SELECT DatabaseName FROM #DatabaseList)
 	ORDER BY Name
 OPEN cursor_RolePerms  
 
@@ -300,45 +313,99 @@ END
 CLOSE cursor_RolePerms 
 DEALLOCATE cursor_RolePerms 
 
+----GENERATE OTHER PERMS / ALL DATABASE LEVEL PERMS NOT PART OF DB ROLES:
+DROP TABLE IF EXISTS #OTHERPERMS
+CREATE TABLE #OTHERPERMS(Stmt VARCHAR(MAX))
+
+DECLARE DBName_Cursor CURSOR
+FOR
+	SELECT Name
+	FROM master.sys.databases
+	WHERE NAME NOT IN ('mssecurity','tempdb')
+		AND State = 0
+		AND name IN (SELECT DatabaseName FROM #DatabaseList)
+	ORDER BY NAME
+OPEN DBName_Cursor
+FETCH NEXT FROM DBName_Cursor INTO @DBName
+WHILE @@FETCH_STATUS = 0
+BEGIN
+
+	SET @SQL = '
+	INSERT INTO #OTHERPERMS(Stmt)
+	SELECT ''USE [' + @DBName + '] '' + 
+	  CASE
+		  WHEN dp.class_desc = ''OBJECT_OR_COLUMN'' THEN
+			dp.state_desc + '' '' + dp.permission_name collate latin1_general_cs_as + 
+			'' ON '' + ''['' + obj_sch.name + '']'' + ''.'' + ''['' + o.name + '']'' +
+			'' TO '' + ''['' + dpr.name + '']''
+		  WHEN dp.class_desc = ''DATABASE'' THEN
+			dp.state_desc + '' '' + dp.permission_name collate latin1_general_cs_as + 
+			'' TO '' + ''['' + dpr.name + '']''
+		  WHEN dp.class_desc = ''SCHEMA'' THEN
+			dp.state_desc + '' '' + dp.permission_name collate latin1_general_cs_as + 
+			'' ON SCHEMA :: '' + ''['' + SCHEMA_NAME(dp.major_id) + '']'' +
+			'' TO '' + ''['' + dpr.name + '']''
+		  WHEN dp.class_desc = ''TYPE'' THEN
+			dp.state_desc + '' '' + dp.permission_name collate Latin1_General_CS_AS + 
+			'' ON TYPE :: ['' + s_types.name + ''].['' + t.name + '']''
+				+ '' TO ['' + dpr.name + '']''
+		  WHEN dp.class_desc = ''CERTIFICATE'' THEN 
+			dp.state_desc + '' '' + dp.permission_name collate latin1_general_cs_as + 
+			'' TO '' + ''['' + dpr.name + '']'' 
+		  WHEN dp.class_desc = ''SYMMETRIC_KEYS'' THEN 
+			dp.state_desc + '' '' + dp.permission_name collate latin1_general_cs_as + 
+		  '' TO '' + ''['' + dpr.name + '']'' 
+		  ELSE 
+			''ERROR: Unhandled class_desc: '' + dp.class_desc
+	  END
+	 AS Stmt
+	FROM [' + @DBName + '].sys.database_permissions AS dp 
+	  JOIN [' + @DBName + '].sys.database_principals AS dpr ON dp.grantee_principal_id=dpr.principal_id
+	  LEFT JOIN [' + @DBName + '].sys.objects AS o ON dp.major_id=o.object_id
+	  LEFT JOIN [' + @DBName + '].sys.schemas AS obj_sch ON o.schema_id = obj_sch.schema_id
+	  LEFT JOIN [' + @DBName + '].sys.types AS t ON dp.major_id = t.user_type_id
+	  LEFT JOIN [' + @DBName + '].sys.schemas AS s_types ON t.schema_id = s_types.schema_id
+	WHERE dpr.name NOT IN (''public'',''guest'') 
+	ORDER BY dpr.name, dp.class_desc, dp.permission_name'
+	
+	--PRINT @SQL
+	EXECUTE (@SQL);
+
+	FETCH NEXT FROM DBName_Cursor INTO @DBName
+END
+CLOSE DBName_Cursor
+DEALLOCATE DBName_Cursor
 
 -----------------VIEW PERMISSIONS----------------------------------
 
-
 SELECT *
 FROM #AllPerms
-WHERE (DatabaseName LIKE '%DBName]')
-	OR (DatabaseName LIKE '%DBName]')
-	--OR (sysadmin = 1 )
 ORDER BY ServerName
 	,UserOrLoginType
 	,UserOrLoginName
 	,DatabaseName
 
---VIEW INDIVIDUAL OBJECT PERMISSIONS:
-SELECT pr.principal_id, pr.name, pr.type_desc,   
-    pr.authentication_type_desc, pe.state_desc,   
-    pe.permission_name, s.name + '.' + o.name AS ObjectName  
-FROM sys.database_principals AS pr  
-JOIN sys.database_permissions AS pe  
-    ON pe.grantee_principal_id = pr.principal_id  
-JOIN sys.objects AS o  
-    ON pe.major_id = o.object_id  
-JOIN sys.schemas AS s  
-    ON o.schema_id = s.schema_id
-WHERE pr.Name = 'DOMAIN\USER'
---pe.permission_name = 'CONTROL'
 
-SELECT --'USE ' + DatabaseName + ' REVOKE ' + PermissionName + ' ON ' + PermissionType + ' :: ' + ObjectName + ' FROM ' + RoleName, 
-	* 
-FROM #DBROLEPERMS
-WHERE --PermissionName IN ('CONTROL')--,'EXECUTE')
---	--AND ObjectName IS NOT NULL
-	--AND 
-	DatabaseName LIKE '%DBName%'
-	--AND RoleName LIKE '%public%'
-	--AND ObjectName = 'dbo'
-ORDER BY DatabaseName, RoleName, ObjectType, PermissionName
+--Add Users to DBs from Logins:
+SELECT DISTINCT 'USE ' + DatabaseName + '   IF NOT EXISTS(SELECT 1 FROM [sys].[database_principals] WHERE [type] IN (N''S'',N''U'',N''G'') AND [name] = ''' + UserName + ''')
+BEGIN CREATE USER [' + Username + '] FOR LOGIN [' + Username + '] END;' AS Stmt
+FROM #DBROLES 
 
---REVOKE PERMISSIONS:
-USE DBName REVOKE CONTROL ON SCHEMA :: dbo FROM Approle
+UNION
+
+--Add Users to DB Roles:
+SELECT 'USE ' + DatabaseName + '  EXEC sp_addrolemember ''' + RoleName + ''', ''' + Username + ''';' as Stmt
+FROM #DBROLES 
+
+UNION
+
+--Add Remaining non-Role Permissions:
+SELECT Stmt 
+FROM #OTHERPERMS
+WHERE Stmt IS NOT NULL
+	AND Stmt NOT LIKE '%GRANT CONNECT%'
+	AND Stmt NOT LIKE '%MS_Agent%'
+ORDER BY Stmt
+
+
 
