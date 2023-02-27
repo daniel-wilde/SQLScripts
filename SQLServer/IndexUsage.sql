@@ -15,8 +15,8 @@ FROM
 									AND I.index_id = S.index_id
 WHERE
 	OBJECTPROPERTY(S.[object_id], 'IsUserTable') = 1 
-	AND DB_NAME(S.database_id) = 'CloudATS'
-	AND OBJECT_NAME(S.[object_id]) LIKE '%JobOrder%'
+	AND DB_NAME(S.database_id) = 'BizDev'
+	AND OBJECT_NAME(S.[object_id]) = 'EmailStats' --LIKE '%Contact%'
 	--AND I.Name IN ('')
 ORDER BY S.user_seeks
 

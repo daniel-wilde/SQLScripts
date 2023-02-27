@@ -31,5 +31,6 @@ DEALLOCATE cursor_SpaceUsed
 
 SELECT * FROM @TableSizes 
 --WHERE TableName IN ('---')
-ORDER BY LEN(Reserved) DESC, Reserved DESC, TotalRows DESC
+--ORDER BY LEN(Reserved) DESC, Reserved DESC, TotalRows DESC
+ORDER BY TotalRows DESC, TableName ASC 
 --ORDER BY TableName ASC

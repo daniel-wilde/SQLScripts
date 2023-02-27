@@ -6,16 +6,19 @@ SELECT
 	,c.ModifiedDate
 	,d.Name AS DataSourceName
 	,cd.path AS DataSourcePath
-FROM [dbo].[Catalog] (nolock) c
-	LEFT JOIN dbo.DataSource (nolock) d ON c.ItemID = d.ItemID
-	LEFT JOIN [dbo].[Catalog] (nolock) cd ON d.link = cd.ItemID
+	--,CONVERT(NVARCHAR(MAX),CONVERT(XML,CONVERT(VARBINARY(MAX),c.Content))) AS REPORTXML
+	,CONVERT(XML,CONVERT(VARBINARY(MAX),c.Content)) AS REPORTXML
+FROM [dbo].[Catalog] (NOLOCK) c
+	LEFT JOIN dbo.DataSource (NOLOCK) d ON c.ItemID = d.ItemID
+	LEFT JOIN [dbo].[Catalog] (NOLOCK) cd ON d.link = cd.ItemID
 WHERE 
 	(c.[Type]  = 2 OR c.[Type]  = 6)
 	AND LEN(c.Name) <> 0
+	AND CONVERT(NVARCHAR(MAX),CONVERT(XML,CONVERT(VARBINARY(MAX),c.Content))) LIKE '%= 614%'
 ORDER BY 
 	ReportPath
 	,ReportName
-
+    
 ----REPORT_SUBSCRIPTIONS-----
 SELECT 
 	SUB.EventType 
